@@ -29,16 +29,44 @@ namespace D2Smells2
         private const int AF_INET = 2;
 
         private LivePcapDevice device;
+        private PacketSniffer sniffer;
         
         public D2Smells2()
         {
             InitializeComponent();
+
+            this.Closing += new System.ComponentModel.CancelEventHandler(this.D2Smells2_Closing);
+
+            sniffer = new PacketSniffer(Log);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                sniffer.StopSniffing();
+                if (sniffer != null)
+                {
+                    sniffer.Dispose();
+                }
+
+                if (components != null)
+                {
+                    components.Dispose();
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+        private void D2Smells2_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            sniffer.StopSniffing();
         }
 
         private void D2Smells2_Load(object sender, EventArgs e)
         {
             LogSharpPcapVersion();
-            LogDeviceList();
+            //LogDeviceList();
             PopulateInterfaceCombobox();
         }
 
@@ -69,6 +97,7 @@ namespace D2Smells2
             }
         }
 
+        // Return the first IPv4 address found for the device
         private PcapAddress GetIPV4Sockddr(LivePcapDevice device)
         {
             foreach (PcapAddress address in device.Addresses)
@@ -78,7 +107,6 @@ namespace D2Smells2
                     return address;
                 }
             }
-
             return null;
         }
         
@@ -129,70 +157,14 @@ namespace D2Smells2
                 {
                     btnToggleSniffing.Text = "Stop Sniffing";
                     cbInterface.Enabled = false;
-                    StartSniffing();
+                    sniffer.StartSniffing(device);
                 }
                 else
                 {
-                    StopSniffing();
+                    sniffer.StopSniffing();
                     cbInterface.Enabled = true;
                     btnToggleSniffing.Text = "Start Sniffing";
                 }
-            }
-        }
-
-        private void StartSniffing()
-        {
-            try
-            {
-                device.OnPacketArrival += new PacketArrivalEventHandler(device_OnPacketArrival);
-
-                // Open the device for capturing
-                int readTimeoutMilliseconds = 1000;
-                //device.StopCaptureTimeout = new TimeSpan(0, 1, 0);
-                device.Open(DeviceMode.Promiscuous, readTimeoutMilliseconds);
-
-                device.StartCapture();
-                Log("Sniffing started");
-            }
-            catch (Exception e)
-            {
-                Log(e.ToString());
-            }
-        }
-
-        private void StopSniffing()
-        {
-            // threw PcapException
-            try
-            {
-                device.StopCapture();
-            }
-            catch (PcapException)
-            {
-                // I'm not sure why the captureThread (PcapDeviceCaptureLoop.cs:197) won't join the calling
-                // thread in a timely fashion.  Because of this, I'm eating this exception for now...
-            }
-
-            Log("Sniffing stopped");
-        }
-
-        private void device_OnPacketArrival(object sender, CaptureEventArgs e)
-        {
-            try
-            {
-                Packet p = Packet.ParsePacket(e.Packet);
-                // We're given an EthernetPacket but I don't particularly care about that layer, so skip it
-                p = p.PayloadPacket;
-                Log(p.ToString());
-            }
-            catch (System.Threading.ThreadAbortException tae)
-            {
-                // device.StopCapture() will abort the capture thread
-                // This will causes a ThreadAbortException if we're on the same thread
-            }
-            catch (Exception ex)
-            {
-                Log(ex.ToString());
             }
         }
     }
